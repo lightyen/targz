@@ -41,7 +41,7 @@ func Compress(destination string, assets ...string) error {
 
 	root := ""
 	walk := func(path string, info os.FileInfo, err error) error {
-		if path == destination {
+		if d, _ := filepath.Rel(path, destination); d == "." {
 			return nil
 		}
 		if err != nil {
