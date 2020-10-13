@@ -6,9 +6,10 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
-func Compress(root string, destination string) error {
+func Compress(destination string, assets ...string) error {
 	dest, err := os.Create(destination)
 	if err != nil {
 		return err
@@ -21,7 +22,28 @@ func Compress(root string, destination string) error {
 	dst := tar.NewWriter(gz)
 	defer dst.Close()
 
-	return filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+	if len(assets) == 0 {
+		return nil
+	}
+
+	skip := true
+	info, err := os.Stat(assets[0])
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() {
+		skip = false
+	}
+
+	if len(assets) > 1 {
+		skip = false
+	}
+
+	root := ""
+	walk := func(path string, info os.FileInfo, err error) error {
+		if path == destination {
+			return nil
+		}
 		if err != nil {
 			return err
 		}
@@ -29,15 +51,20 @@ func Compress(root string, destination string) error {
 		if err != nil {
 			return err
 		}
-		rel, err := filepath.Rel(root, path)
-		if err != nil {
-			return err
-		}
-		if rel == "." {
-			return nil // skip
+
+		if skip {
+			rel, err := filepath.Rel(assets[0], path)
+			if err != nil {
+				return err
+			}
+			if rel == "." {
+				return nil // skip
+			}
+			hdr.Name = filepath.ToSlash(rel)
+		} else {
+			hdr.Name = filepath.ToSlash(filepath.Join(filepath.Base(root), strings.TrimPrefix(path, root)))
 		}
 
-		hdr.Name = filepath.ToSlash(rel)
 		if err := dst.WriteHeader(hdr); err != nil {
 			return err
 		}
@@ -55,5 +82,21 @@ func Compress(root string, destination string) error {
 			return err
 		}
 		return nil
-	})
+	}
+
+	for _, a := range assets {
+		info, err := os.Stat(a)
+		if err != nil {
+			return err
+		}
+		root = a
+		if info.IsDir() {
+			if err := filepath.Walk(a, walk); err != nil {
+				return err
+			}
+		} else if err := walk(a, info, err); err != nil {
+			return err
+		}
+	}
+	return nil
 }
